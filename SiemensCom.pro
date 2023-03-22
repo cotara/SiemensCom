@@ -1,5 +1,4 @@
-QT       += core gui
-QT += serialbus
+QT       += core gui serialbus
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -15,6 +14,7 @@ SOURCES += \
     mainwindow.cpp
 
 HEADERS += \
+    console.h \
     mainwindow.h
 
 FORMS += \
@@ -24,3 +24,7 @@ FORMS += \
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
+
+RESOURCES += \
+    res.qrc
+RC_ICONS += icon.ico
