@@ -16,7 +16,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) , ui(new Ui::MainW
     ui->statusLamp->setStyleSheet("background-color: #FF0000");
 
     m_timer = new QTimer();
-    m_timer->setInterval(100);
+    m_timer->setInterval(1000);
     connect(m_timer,&QTimer::timeout,this,&MainWindow::timeOut);
     //Консоль
     m_console = new Console(this);
@@ -59,24 +59,32 @@ void MainWindow::onModbusStateChanged(int state)
 }
 
 void MainWindow::timeOut(){
-    modbus_3(6,2);
+    modbus_3(CURPOS_HIGH + shifMulter*MOTOR_SHIFT,5);
 }
 
 void MainWindow::statusParse(){
-    if( ModbusReg.at(7) & (1 << 0))
+    int add = CURPOS_HIGH + shifMulter*MOTOR_SHIFT + 2;
+
+    if( ModbusReg.at(add))
         ui->statusLamp->setStyleSheet("background-color: #00FF00");
     else
         ui->statusLamp->setStyleSheet("background-color: #FF0000");
 
-    if( ModbusReg.at(7) & (1 << 1))
+    if( !ModbusReg.at(add+1) )
         ui->errorLamp->setStyleSheet("background-color: #00FF00");
     else
         ui->errorLamp->setStyleSheet("background-color: #FF0000");
 
-    if( ModbusReg.at(7) & (1 << 1))
+    if( ModbusReg.at(add+2))
         ui->calibrationLamp->setStyleSheet("background-color: #00FF00");
     else
         ui->calibrationLamp->setStyleSheet("background-color: #FF0000");
+}
+
+void MainWindow::processModbus3()
+{
+    ui->positionNowLabel->setText(QString::number((ModbusReg.at(0)<<16) + ModbusReg.at(1)));
+    statusParse();
 }
 
 void MainWindow::on_connectButton_clicked()
@@ -114,8 +122,11 @@ void MainWindow::onReadReady()
         if(unit.startAddress()+unit.valueCount() <= 8){
             for (int i = 0, total = int(unit.valueCount()); i < total; ++i)
                 ModbusReg[unit.startAddress()+i] = unit.value(i);
-            ui->positionNowLabel->setText(QString::number(ModbusReg.at(6)));
-            statusParse();
+            processModbus3();
+            m_console->putData(QString("  ----->  FROM " +  QString::number(ui->serverEdit->value()) + " DEV:").toUtf8());
+            for (int i = 0, total = int(unit.valueCount()); i < total; ++i)
+                 m_console->putData(QString::number(unit.value(i)).toUtf8());
+            m_console->putData("\n");
         }
         else{
             statusBar()->showMessage(tr("Read response error: %1 (Mobus exception: 0x%2)").
@@ -149,7 +160,7 @@ void MainWindow::modbus_3(int startAdd, int count)
     if (auto *reply = modbusDevice->sendReadRequest(m_unit, ui->serverEdit->value())) {
         if (!reply->isFinished()){
             connect(reply, &QModbusReply::finished, this, &MainWindow::onReadReady);
-            m_console->putData(QString("REQ TO " +  QString::number(ui->serverEdit->value()) + " DEV: ").toUtf8());
+            m_console->putData(QString("REQ TO " +  QString::number(ui->serverEdit->value()) + " DEV:").toUtf8());
         }
         else
             delete reply; // broadcast replies return immediately
@@ -187,48 +198,56 @@ void MainWindow::modbus_6(int startAdd, int value)
         statusBar()->showMessage(tr("Write error: ") + modbusDevice->errorString(), 5000);
 }
 
+void MainWindow::on_onButton_toggled(bool checked){
+    modbus_6(ON_OFF + shifMulter*MOTOR_SHIFT,checked);
+}
+void MainWindow::on_calibrationButton_clicked(){
+    modbus_6(CALIB_ON + shifMulter*MOTOR_SHIFT,1);
+}
 void MainWindow::on_jogPlusButton_pressed(){
-   modbus_6(2,1);
+   modbus_6(JOG_RIGHT + shifMulter*MOTOR_SHIFT,1);
 }
-
 void MainWindow::on_jogPlusButton_released(){
-    modbus_6(2,0);
+    modbus_6(JOG_RIGHT + shifMulter*MOTOR_SHIFT,0);
 }
-
 void MainWindow::on_jogMinusButton_pressed(){
-    modbus_6(3,1);
+    modbus_6(JOG_LEFT + shifMulter*MOTOR_SHIFT,1);
 }
-
 void MainWindow::on_jogMinusButton_released(){
-    modbus_6(3,0);
+    modbus_6(JOG_LEFT + shifMulter*MOTOR_SHIFT,0);
 }
-
+void MainWindow::on_positionBox_valueChanged(int arg1){
+   modbus_6(SETPOS_HIGH + shifMulter*MOTOR_SHIFT,arg1>>16);
+   modbus_6(SETPOS_LOW + shifMulter*MOTOR_SHIFT,arg1 & 0xFFFF);
+}
+void MainWindow::on_speedSilder_sliderReleased(){
+    modbus_6(SPEED + shifMulter*MOTOR_SHIFT,ui->speedSilder->value());
+}
+void MainWindow::on_resetButton_clicked(){
+    modbus_6(RESET + shifMulter*MOTOR_SHIFT,0);
+}
 void MainWindow::on_goButton_clicked(){
-    modbus_6(4,ui->positionBox->value());
-    modbus_6(5,1);
+    modbus_6(MOVETO_ABS + shifMulter*MOTOR_SHIFT,1);
 }
-
+void MainWindow::on_goRelButton_clicked(){
+     modbus_6(MOVETO_REL + shifMulter*MOTOR_SHIFT,1);
+}
 void MainWindow::on_stopButton_clicked(){
-    modbus_6(5,0);
+    modbus_6(HATL + shifMulter*MOTOR_SHIFT,1);
 }
 
 void MainWindow::on_backButton_clicked(){
-    modbus_6(4,0);
-    modbus_6(5,1);
+    modbus_6(SETPOS_HIGH + shifMulter*MOTOR_SHIFT,0);
+    modbus_6(SETPOS_LOW + shifMulter*MOTOR_SHIFT,0);
+    modbus_6(MOVETO_ABS + shifMulter*MOTOR_SHIFT,1);
 }
 
-void MainWindow::on_calibrationButton_clicked(){
-    modbus_6(1,1);
+
+void MainWindow::on_speedSilder_valueChanged(int value){
+    ui->speedLabel->setText(QString::number(value));
 }
 
-void MainWindow::on_onButton_clicked(){
-    modbus_6(0,1);
+void MainWindow::on_motorBox_currentIndexChanged(int index){
+    shifMulter = index;
 }
 
-void MainWindow::on_offButton_clicked(){
-    modbus_6(0,0);
-}
-
-void MainWindow::on_resetButton_clicked(){
-    modbus_6(8,0);
-}
