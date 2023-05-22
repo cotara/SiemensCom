@@ -11,9 +11,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) , ui(new Ui::MainW
 {
     ui->setupUi(this);
 
-    ui->calibrationLamp->setStyleSheet("background-color: #FF0000");
-    ui->errorLamp->setStyleSheet("background-color: #FF0000");
-    ui->statusLamp->setStyleSheet("background-color: #FF0000");
+    ui->calibrationLamp->setStyleSheet("background-color: #717171");
+    ui->errorLamp->setStyleSheet("background-color: #717171");
+    ui->statusLamp->setStyleSheet("background-color: #717171");
+    ui->statusPower->setStyleSheet("background-color: #717171");
+    ui->statusEmition->setStyleSheet("background-color: #717171");
+    ui->statusEmitblock->setStyleSheet("background-color: #717171");
+    ui->statusButton->setStyleSheet("background-color: #717171");
+
 
     m_timer = new QTimer();
     m_timer->setInterval(1000);
@@ -23,11 +28,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) , ui(new Ui::MainW
     m_console->setMaximumHeight(250);
     ui->consoleLayout->addWidget(m_console);
 
-    ModbusReg.resize(8);
+    ModbusReg.resize(80);
 
     modbusDevice = new QModbusTcpClient(this);
     if (ui->portEdit->text().isEmpty())
-        ui->portEdit->setText(QLatin1String("127.0.0.1:502"));
+        ui->portEdit->setText(QLatin1String("172.31.1.1:502"));
 
     connect(modbusDevice, &QModbusClient::errorOccurred, [this](QModbusDevice::Error) {
         statusBar()->showMessage(modbusDevice->errorString(), 5000);
@@ -59,38 +64,71 @@ void MainWindow::onModbusStateChanged(int state)
 }
 
 void MainWindow::timeOut(){
-    modbus_3(CURPOS_HIGH + shifMulter*MOTOR_SHIFT,5);
+    modbus_3(CURPOS_HIGH + shifMulter*MOTOR_SHIFT,12);
 }
 
-void MainWindow::statusParse(){
-    int add = CURPOS_HIGH + shifMulter*MOTOR_SHIFT + 2;
+void MainWindow::statusParse(int add){
 
-    if( ModbusReg.at(add))
-        ui->statusLamp->setStyleSheet("background-color: #00FF00");
-    else
-        ui->statusLamp->setStyleSheet("background-color: #FF0000");
-
-    if( !ModbusReg.at(add+1) )
-        ui->errorLamp->setStyleSheet("background-color: #00FF00");
-    else
-        ui->errorLamp->setStyleSheet("background-color: #FF0000");
 
     if( ModbusReg.at(add+2))
+        ui->statusLamp->setStyleSheet("background-color: #00FF00");
+    else
+        ui->statusLamp->setStyleSheet("background-color: #717171");
+
+    if( ModbusReg.at(add+3) )
+        ui->errorLamp->setStyleSheet("background-color: #FF0000");
+    else
+        ui->errorLamp->setStyleSheet("background-color: #717171");
+
+    if( ModbusReg.at(add+4))
         ui->calibrationLamp->setStyleSheet("background-color: #00FF00");
     else
         ui->calibrationLamp->setStyleSheet("background-color: #FF0000");
+
+
+    if( ModbusReg.at(add+8))
+        ui->statusEmition->setStyleSheet("background-color: #FF0000");
+    else
+        ui->statusEmition->setStyleSheet("background-color: #717171");
+    if( ModbusReg.at(add+9))
+        ui->statusPower->setStyleSheet("background-color: #00FF00");
+    else
+        ui->statusPower->setStyleSheet("background-color: #717171");
+    if( ModbusReg.at(add+10))
+        ui->statusButton->setStyleSheet("background-color: #FF0000");
+    else
+        ui->statusButton->setStyleSheet("background-color: #717171");
+    if( ModbusReg.at(add+11))
+        ui->statusEmitblock->setStyleSheet("background-color: #FF0000");
+    else
+        ui->statusEmitblock->setStyleSheet("background-color: #717171");
+
+
+
+
 }
 
-void MainWindow::processModbus3()
-{
-    ui->positionNowLabel->setText(QString::number((ModbusReg.at(0)<<16) + ModbusReg.at(1)));
-    statusParse();
+void MainWindow::processModbus3(){
+    int add = CURPOS_HIGH + shifMulter*MOTOR_SHIFT;
+    c2f.sh[0] = ModbusReg.at(add+1);
+    c2f.sh[1] = ModbusReg.at(add);
+
+    ui->positionNowLabel->setText(QString::number(c2f.f));
+    statusParse(add);
 }
 
 void MainWindow::on_connectButton_clicked()
 {
     if (!modbusDevice)
         return;
+
+    ui->calibrationLamp->setStyleSheet("background-color: #717171");
+    ui->errorLamp->setStyleSheet("background-color: #717171");
+    ui->statusLamp->setStyleSheet("background-color: #717171");
+    ui->statusPower->setStyleSheet("background-color: #717171");
+    ui->statusEmition->setStyleSheet("background-color: #717171");
+    ui->statusEmitblock->setStyleSheet("background-color: #717171");
+    ui->statusButton->setStyleSheet("background-color: #717171");
 
     statusBar()->clearMessage();
     if (modbusDevice->state() != QModbusDevice::ConnectedState) {
@@ -119,7 +157,7 @@ void MainWindow::onReadReady()
 
     if (reply->error() == QModbusDevice::NoError) {
         const QModbusDataUnit unit = reply->result();
-        if(unit.startAddress()+unit.valueCount() <= 8){
+        if(unit.startAddress()+unit.valueCount() <= 80){
             for (int i = 0, total = int(unit.valueCount()); i < total; ++i)
                 ModbusReg[unit.startAddress()+i] = unit.value(i);
             processModbus3();
@@ -131,7 +169,7 @@ void MainWindow::onReadReady()
         else{
             statusBar()->showMessage(tr("Read response error: %1 (Mobus exception: 0x%2)").
                                         arg(reply->errorString()).
-                                        arg(reply->rawResult().exceptionCode(), -1, 16), 5000);
+                                        arg(reply->rawResult().exceptionCode(), -1, 16), 5000);  
         }
     } else if (reply->error() == QModbusDevice::ProtocolError) {
         statusBar()->showMessage(tr("Read response error: %1 (Mobus exception: 0x%2)").
@@ -193,6 +231,7 @@ void MainWindow::modbus_6(int startAdd, int value)
         }
         else
             reply->deleteLater();
+
     }
     else
         statusBar()->showMessage(tr("Write error: ") + modbusDevice->errorString(), 5000);
@@ -216,15 +255,20 @@ void MainWindow::on_jogMinusButton_pressed(){
 void MainWindow::on_jogMinusButton_released(){
     modbus_6(JOG_LEFT + shifMulter*MOTOR_SHIFT,0);
 }
-void MainWindow::on_positionBox_valueChanged(int arg1){
-   modbus_6(SETPOS_HIGH + shifMulter*MOTOR_SHIFT,arg1>>16);
-   modbus_6(SETPOS_LOW + shifMulter*MOTOR_SHIFT,arg1 & 0xFFFF);
+
+void MainWindow::on_doubleSpinBox_valueChanged(double arg1){
+    float pos = arg1;
+    c2f.f = pos;
+    modbus_6(SETPOS_HIGH + shifMulter*MOTOR_SHIFT,c2f.sh[1]);
+    _sleep(100);
+    modbus_6(SETPOS_LOW + shifMulter*MOTOR_SHIFT,c2f.sh[0]);
 }
-void MainWindow::on_speedSilder_sliderReleased(){
-    modbus_6(SPEED + shifMulter*MOTOR_SHIFT,ui->speedSilder->value());
+
+void MainWindow::on_speedBox_valueChanged(double arg1){
+    modbus_6(SPEED + shifMulter*MOTOR_SHIFT,static_cast<short>(arg1));
 }
 void MainWindow::on_resetButton_clicked(){
-    modbus_6(RESET + shifMulter*MOTOR_SHIFT,0);
+    modbus_6(RESET + shifMulter*MOTOR_SHIFT,1);
 }
 void MainWindow::on_goButton_clicked(){
     modbus_6(MOVETO_ABS + shifMulter*MOTOR_SHIFT,1);
@@ -236,18 +280,8 @@ void MainWindow::on_stopButton_clicked(){
     modbus_6(HATL + shifMulter*MOTOR_SHIFT,1);
 }
 
-void MainWindow::on_backButton_clicked(){
-    modbus_6(SETPOS_HIGH + shifMulter*MOTOR_SHIFT,0);
-    modbus_6(SETPOS_LOW + shifMulter*MOTOR_SHIFT,0);
-    modbus_6(MOVETO_ABS + shifMulter*MOTOR_SHIFT,1);
-}
-
-
-void MainWindow::on_speedSilder_valueChanged(int value){
-    ui->speedLabel->setText(QString::number(value));
-}
-
 void MainWindow::on_motorBox_currentIndexChanged(int index){
     shifMulter = index;
 }
+
 
